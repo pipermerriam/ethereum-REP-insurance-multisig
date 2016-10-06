@@ -64,12 +64,22 @@ contract MultiSignature {
         contractTerms = _contractTerms;
     }
 
+    /*
+     *  ----------
+     *  | Events |
+     *  ----------
+     */
     event EtherDeposit(address indexed who, uint amount);
     event EtherWithdrawal(address indexed who, uint amount);
 
     event TokenDeposit(address indexed who, uint amount);
     event TokenWithdrawal(address indexed who, uint amount);
 
+    /*
+     *  -----------------------------
+     *  | Contract State Management |
+     *  -----------------------------
+     */
     enum State {
         Genesis,
         WaitingForEther,
@@ -80,6 +90,9 @@ contract MultiSignature {
         NeverLocked
     }
 
+    /*
+     *  The current "state" that the contract is in.
+     */
     function currentState() constant returns (State) {
         if (isLocked()) {
             return State.Locked;
@@ -98,6 +111,11 @@ contract MultiSignature {
         }
     }
 
+    /*
+     *  Has the minimum ether deposit been met.  This is crafted specially to
+     *  ensure it still returns `false` during the transaction that the deposit
+     *  is sent.
+     */
     function ethDepositMet() constant returns (bool) {
         if (msg.value > this.balance) {
             // This should be completely impossible but ensuring it can't
@@ -107,14 +125,23 @@ contract MultiSignature {
         return (this.balance - msg.value >= ethDepositMinimum);
     }
 
+    /*
+     *  Has the minimum token deposit been met.
+     */
     function tokenDepositMet() constant returns (bool) {
         return (token.balanceOf(this) >= tokenDepositMinimum);
     }
 
+    /*
+     *  Have both deposit minimums been met
+     */
     function depositsMet() constant returns (bool) {
         return (ethDepositMet() && tokenDepositMet());
     }
 
+    /*
+     *  Is the contract currently locked.
+     */
     function isLocked() constant returns (bool) {
         if (wasLocked()) {
             return (now < unlockAt);
@@ -123,29 +150,47 @@ contract MultiSignature {
         }
     }
 
+    /*
+     *  Did the arbiter ever lock the contract
+     */
     function wasLocked() constant returns (bool) {
         return (lockedAt != 0);
     }
 
+    /*
+     *  -------------
+     *  | Modifiers |
+     *  -------------
+     */
+
+    /*
+     *  Only allow execution if the contract is in the specified state.
+     */
     modifier inState(State state) {
         if (currentState() == state) {
             _
-            // _;  // if solc 0.4.x
         } else {
             throw;
         }
     }
 
+    /*
+     *  Only allow execution if the contract is in one of the two provided
+     *  states.
+     */
     modifier inState2(State stateA, State stateB) {
         var _currentState = currentState();
         if (_currentState == stateA || _currentState == stateB) {
             _
-            // _;  // if solc 0.4.x
         } else {
             throw;
         }
     }
 
+    /*
+     *  Only allow execution if the contract is in one of the three provided
+     *  states.
+     */
     modifier inState3(State stateA, State stateB, State stateC) {
         var _currentState = currentState();
         if (_currentState == stateA || _currentState == stateB || _currentState == stateC) {
@@ -156,6 +201,9 @@ contract MultiSignature {
         }
     }
 
+    /*
+     *  Only allow execution from the arbiter
+     */
     modifier onlyArbiter {
         if (msg.sender == arbiter) {
             _
@@ -165,6 +213,9 @@ contract MultiSignature {
         }
     }
 
+    /*
+     *  Only allow execution from partyA
+     */
     modifier onlyPartyA {
         if (msg.sender == partyA) {
             _
@@ -174,6 +225,9 @@ contract MultiSignature {
         }
     }
 
+    /*
+     *  Only allow execution from partyb
+     */
     modifier onlyPartyB {
         if (msg.sender == partyB) {
             _
@@ -183,6 +237,9 @@ contract MultiSignature {
         }
     }
 
+    /*
+     *  Only allow execution prior to the `unlockAt` time.
+     */
     modifier beforeUnlock {
         if (now < unlockAt) {
             _
@@ -192,6 +249,9 @@ contract MultiSignature {
         }
     }
 
+    /*
+     *  Do not allow sending of ether to this function.
+     */
     modifier noEther {
         if (msg.value == 0) {
             _
@@ -201,6 +261,10 @@ contract MultiSignature {
         }
     }
 
+    /*
+     *  Only allow one of the trapdoor multisig accounts to execute this
+     *  function.
+     */
     modifier onlyTrapdoorMultiSig {
         if (msg.sender == trapdoorA || msg.sender == trapdoorB || msg.sender == trapdoorC) {
             _
@@ -209,6 +273,15 @@ contract MultiSignature {
         }
     }
 
+    /*
+     *  -----------
+     *  | Actions |
+     *  -----------
+     */
+
+    /*
+     *  Function for partyA to deposit ether
+     */
     function depositEther() public
                             beforeUnlock
                             onlyPartyA
@@ -226,6 +299,10 @@ contract MultiSignature {
         }
     }
 
+    /*
+     *  Function for partyB to deposit tokens.  This handles both a direct
+     *  transfer out of band, or using the `transferFrom` and `approve` API.
+     */
     function depositToken() public 
                             noEther
                             beforeUnlock
@@ -246,6 +323,9 @@ contract MultiSignature {
         return false;
     }
 
+    /*
+     *  Function for the arbiter to enable the lock.
+     */
     function lock() public
                     noEther
                     beforeUnlock
@@ -255,6 +335,9 @@ contract MultiSignature {
         lockedAt = now;
     }
 
+    /*
+     *  Function for partyA to recover their ether
+     */
     function refundEther() public
                            noEther
                            onlyPartyA
@@ -273,6 +356,9 @@ contract MultiSignature {
         }
     }
 
+    /*
+     *  Function for partyA to recover their tokens
+     */
     function refundTokens() public
                             noEther
                             onlyPartyB
@@ -290,6 +376,10 @@ contract MultiSignature {
         return false;
     }
 
+    /*
+     *  Function for partyB to withdraw the ether deposit once the contract has
+     *  been locked.
+     */
     function withdrawEther() public
                              noEther
                              inState2(State.Locked, State.Unlocked)
@@ -303,6 +393,10 @@ contract MultiSignature {
         }
     }
 
+    /*
+     *  Function for sending the tokens once the contract has been resolved
+     *  through voting.
+     */
     function withdrawTokens() public
                               noEther
                               inState(State.Unlocked)
@@ -348,6 +442,9 @@ contract MultiSignature {
         return false;
     }
 
+    /*
+     *  Function for partyA to vote on the recipient of the tokens.
+     */
     function submitPartyAVote(address _who) public
                                             noEther
                                             inState(State.Unlocked)
@@ -363,6 +460,9 @@ contract MultiSignature {
         }
     }
 
+    /*
+     *  Function for partyB to vote on the recipient of the tokens.
+     */
     function submitPartyBVote(address _who) public
                                             noEther
                                             inState(State.Unlocked)
@@ -378,6 +478,9 @@ contract MultiSignature {
         }
     }
 
+    /*
+     *  Function for the arbiter to vote on the recipient of the tokens.
+     */
     function submitArbiterVote(address _who) public
                                             noEther
                                             inState(State.Unlocked)
@@ -396,6 +499,11 @@ contract MultiSignature {
     event TrapdoorInitiated(address _from, bytes32 _hash);
     event TrapdoorExecuted(bytes32 _hash);
 
+    /*
+     *  Safety hatch style function that allows anything in the contract to be
+     *  recovered in the event that something unforseen happens.  Requires
+     *  multisignature action from 2 of 3 of the trapdoor addresses.
+     */
     function trapdoor(address to,
                       uint callValue,
                       bytes callData) public
